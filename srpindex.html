@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>資機材 在庫管理アプリ</title>
+    <style>
+        body { font-family: sans-serif; margin: 0; padding: 0; background-color: #f4f4f4; color: #333; }
+        header { background-color: #2c3e50; color: white; padding: 15px; text-align: center; }
+        .nav-buttons { display: flex; overflow-x: auto; background: #fff; border-bottom: 2px solid #ddd; white-space: nowrap; }
+        .nav-buttons button { flex: 1; min-width: 80px; padding: 15px 10px; border: none; background: none; font-size: 14px; cursor: pointer; }
+        .nav-buttons button.active { border-bottom: 3px solid #3498db; font-weight: bold; color: #3498db; }
+        .page { display: none; padding: 20px; }
+        .page.active { display: block; }
+        .card { background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-bottom: 15px; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        input[type="text"], select { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; font-size: 16px; }
+        .btn { display: block; width: 100%; padding: 12px; border: none; border-radius: 5px; font-size: 16px; cursor: pointer; text-align: center; margin-top: 10px; }
+        .btn-primary { background-color: #3498db; color: white; }
+        .btn-success { background-color: #2ecc71; color: white; }
+        .btn-danger { background-color: #e74c3c; color: white; margin-top: 5px; padding: 8px; font-size: 13px; }
+        .btn-discard { background-color: #7f8c8d; color: white; }
+        .radio-group { display: flex; gap: 10px; }
+        .radio-group label { font-weight: normal; background: #eee; padding: 10px; border-radius: 5px; flex: 1; text-align: center; }
+        
+        .digit-picker { display: flex; gap: 5px; align-items: center; }
+        .digit-picker select { flex: 1; text-align: center; font-size: 18px; appearance: none; background: #f9f9f9; border: 1px solid #ccc; border-radius: 5px; padding: 5px; }
+        .equipment-item { border-bottom: 1px solid #eee; padding: 15px 0; }
+        .history-item { border-left: 4px solid #3498db; padding-left: 10px; margin-bottom: 15px; font-size: 14px; position: relative; }
+        .history-date { color: #666; font-size: 12px; margin-bottom: 5px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 14px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+        .btn-delete { position: absolute; right: 10px; top: 10px; background: #ff4d4d; color: white; border: none; border-radius: 3px; padding: 5px 8px; font-size: 12px; cursor: pointer; }
+        .master-item { display: flex; justify-content: space-between; align-items: center; padding: 10px; border-bottom: 1px solid #eee; }
+
+        /* パスワードモーダル用スタイル */
+        #pw-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; flex-direction: column; align-items: center; justify-content: center; }
+        .pw-container { background: white; padding: 20px; border-radius: 10px; width: 80%; max-width: 300px; text-align: center; }
+        .pw-display { font-size: 24px; margin-bottom: 20px; letter-spacing: 5px; height: 30px; }
+        .numpad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+        .num-btn { background: #eee; border: none; padding: 15px; font-size: 20px; border-radius: 5px; cursor: pointer; }
+        .num-btn:active { background: #ddd; }
+        .num-btn.clear { background: #fab1a0; }
+    </style>
+</head>
+<body>
+
+<div id="pw-modal">
+    <div class="pw-container">
+        <h3>パスワード入力</h3>
+        <div id="pw-dots" class="pw-display"></div>
+        <div class="numpad">
+            <button class="num-btn" onclick="pressNum('1')">1</button>
+            <button class="num-btn" onclick="pressNum('2')">2</button>
+            <button class="num-btn" onclick="pressNum('3')">3</button>
+            <button class="num-btn" onclick="pressNum('4')">4</button>
+            <button class="num-btn" onclick="pressNum('5')">5</button>
+            <button class="num-btn" onclick="pressNum('6')">6</button>
+            <button class="num-btn" onclick="pressNum('7')">7</button>
+            <button class="num-btn" onclick="pressNum('8')">8</button>
+            <button class="num-btn" onclick="pressNum('9')">9</button>
+            <button class="num-btn clear" onclick="pressNum('C')">C</button>
+            <button class="num-btn" onclick="pressNum('0')">0</button>
+            <button class="num-btn" onclick="closePwModal()">閉</button>
+        </div>
+    </div>
+</div>
+
+<header>
+    <h2>資機材管理</h2>
+</header>
+
+<div class="nav-buttons">
+    <button id="nav-site" class="active" onclick="handleNav('page-site', this)">現場入力</button>
+    <button id="nav-purchase" onclick="handleNav('page-purchase', this)">購入入力</button>
+    <button id="nav-discard" onclick="handleNav('page-discard', this)">廃棄入力</button>
+    <button id="nav-inventory" onclick="handleNav('page-inventory', this)">在庫総数</button>
+    <button id="nav-history" onclick="handleNav('page-history', this)">履歴</button>
+    <button id="nav-settings" onclick="handleNav('page-settings', this)">設定</button>
+</div>
+
+<div id="page-site" class="page active">
+    <div class="card">
+        <h3>現場記録</h3>
+        <div class="form-group">
+            <label>現場名</label>
+            <input type="text" id="site-name" placeholder="現場名を入力">
+        </div>
+        <div class="form-group radio-group">
+            <label><input type="radio" name="action-type" value="持ち出し" checked> 持ち出し</label>
+            <label><input type="radio" name="action-type" value="持ち帰り"> 持ち帰り</label>
+        </div>
+        <button class="btn btn-primary" onclick="toggleEquipmentList()">資機材を選択する ▼</button>
+        <div id="equipment-list" style="display: none; margin-top: 15px;"></div>
+        <button class="btn btn-success" onclick="saveSiteRecord()" style="margin-top: 20px;">この内容で記録する</button>
+    </div>
+</div>
+
+<div id="page-purchase" class="page">
+    <div class="card">
+        <h3>資機材の購入（追加）</h3>
+        <div class="form-group">
+            <label>種類</label>
+            <select id="purchase-type" onchange="checkSignDetail('purchase')"></select>
+        </div>
+        <div class="form-group" id="purchase-sign-detail-group" style="display:none;">
+            <label>看板の詳細</label>
+            <input type="text" id="purchase-sign-detail" placeholder="例：工事中など">
+        </div>
+        <div class="form-group">
+            <label>購入数 (000〜999)</label>
+            <div class="digit-picker" id="purchase-digits"></div>
+        </div>
+        <button class="btn btn-success" onclick="saveStockAction('購入')">購入を記録する</button>
+    </div>
+</div>
+
+<div id="page-discard" class="page">
+    <div class="card">
+        <h3>資機材の廃棄（削減）</h3>
+        <div class="form-group">
+            <label>種類</label>
+            <select id="discard-type" onchange="checkSignDetail('discard')"></select>
+        </div>
+        <div class="form-group" id="discard-sign-detail-group" style="display:none;">
+            <label>看板の詳細</label>
+            <input type="text" id="discard-sign-detail" placeholder="例：工事中など">
+        </div>
+        <div class="form-group">
+            <label>廃棄数 (000〜999)</label>
+            <div class="digit-picker" id="discard-digits"></div>
+        </div>
+        <button class="btn btn-discard" onclick="saveStockAction('廃棄')">廃棄を記録する</button>
+    </div>
+</div>
+
+<div id="page-inventory" class="page">
+    <div class="card">
+        <h3>現在の在庫総数</h3>
+        <div id="inventory-display"></div>
+    </div>
+    <div class="card">
+        <h3>現場ごとの状況 (持ち出し中)</h3>
+        <div id="site-inventory-display"></div>
+    </div>
+</div>
+
+<div id="page-history" class="page">
+    <div class="card">
+        <h3>履歴検索</h3>
+        <input type="text" id="search-history" placeholder="キーワード検索..." onkeyup="renderHistory()">
+    </div>
+    <div class="card" id="history-display"></div>
+</div>
+
+<div id="page-settings" class="page">
+    <div class="card">
+        <h3>資機材マスターの編集</h3>
+        <div class="form-group" style="display: flex; gap: 5px;">
+            <input type="text" id="new-eq-name" placeholder="新しい資機材名">
+            <button class="btn btn-primary" style="margin-top:0; width: 80px;" onclick="addMasterItem()">追加</button>
+        </div>
+        <div id="master-list"></div>
+    </div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-database-compat.js"></script>
+
+<script>
+    const firebaseConfig = { databaseURL: "https://srpapd-2a50f-default-rtdb.firebaseio.com/" };
+    firebase.initializeApp(firebaseConfig);
+    const database = firebase.database();
+    const dbRef = database.ref('inventoryDB');
+    const masterRef = database.ref('equipmentMaster');
+
+    const CORRECT_PW = "1122";
+    let inputPw = "";
+    let pendingPage = null;
+    let pendingBtn = null;
+
+    let equipmentTypes = ['カラーコーン', 'コーンバー', 'ピカソーラー', '看板ウエイト', '看板'];
+    let db = [];
+
+    // ナビゲーション制御
+    function handleNav(pageId, btn) {
+        if (pageId === 'page-purchase' || pageId === 'page-inventory') {
+            pendingPage = pageId;
+            pendingBtn = btn;
+            openPwModal();
+        } else {
+            showPage(pageId, btn);
+        }
+    }
+
+    function openPwModal() {
+        inputPw = "";
+        updatePwDisplay();
+        document.getElementById('pw-modal').style.display = 'flex';
+    }
+
+    function closePwModal() {
+        document.getElementById('pw-modal').style.display = 'none';
+    }
+
+    function pressNum(n) {
+        if (n === 'C') {
+            inputPw = "";
+        } else {
+            inputPw += n;
+        }
+        updatePwDisplay();
+
+        if (inputPw === CORRECT_PW) {
+            closePwModal();
+            showPage(pendingPage, pendingBtn);
+        } else if (inputPw.length >= 4) {
+            inputPw = "";
+            setTimeout(() => { alert("パスワードが違います"); updatePwDisplay(); }, 10);
+        }
+    }
+
+    function updatePwDisplay() {
+        document.getElementById('pw-dots').innerText = "●".repeat(inputPw.length);
+    }
+
+    // --- 以下、既存のロジック ---
+
+    masterRef.on('value', (snapshot) => {
+        const data = snapshot.val();
+        if (data) equipmentTypes = Object.values(data);
+        updateAllUI();
+    });
+
+    dbRef.on('value', (snapshot) => {
+        const data = snapshot.val();
+        db = data ? Object.keys(data).map(key => ({...data[key], firebaseKey: key})) : [];
+        if(document.getElementById('page-history').classList.contains('active')) renderHistory();
+        if(document.getElementById('page-inventory').classList.contains('active')) renderInventory();
+    });
+
+    function updateAllUI() {
+        renderSiteEquipmentList();
+        renderDropdown('purchase-type');
+        renderDropdown('discard-type');
+        renderMasterSettings();
+    }
+
+    function renderDropdown(id) {
+        const select = document.getElementById(id);
+        if(!select) return;
+        select.innerHTML = equipmentTypes.map(t => `<option value="${t}">${t}</option>`).join('');
+    }
+
+    function renderSiteEquipmentList() {
+        let html = '';
+        equipmentTypes.forEach((item, index) => {
+            html += `<div class="equipment-item"><label>${item}</label>`;
+            if (item === '看板') html += `<input type="text" id="site-sign-detail" placeholder="看板の種類" style="margin-bottom:8px;">`;
+            html += `<div class="digit-picker">${createDigitPickerHTML('site-eq-' + index)}</div></div>`;
+        });
+        document.getElementById('equipment-list').innerHTML = html;
+    }
+
+    function renderMasterSettings() {
+        document.getElementById('master-list').innerHTML = equipmentTypes.map(t => `
+            <div class="master-item"><span>${t}</span>
+            <button class="btn-danger" onclick="deleteMasterItem('${t}')">削除</button></div>
+        `).join('');
+    }
+
+    function addMasterItem() {
+        const name = document.getElementById('new-eq-name').value.trim();
+        if (!name || equipmentTypes.includes(name)) return;
+        masterRef.push(name);
+        document.getElementById('new-eq-name').value = '';
+    }
+
+    function deleteMasterItem(name) {
+        if (name === '看板' || !confirm(`${name} を削除しますか？`)) return;
+        masterRef.once('value', (snapshot) => {
+            snapshot.forEach((child) => { if (child.val() === name) child.ref.remove(); });
+        });
+    }
+
+    function createDigitPickerHTML(idPrefix) {
+        let html = '';
+        for (let i = 1; i <= 3; i++) {
+            html += `<select id="${idPrefix}-d${i}">`;
+            for (let j = 0; j <= 9; j++) html += `<option value="${j}">${j}</option>`;
+            html += `</select>`;
+        }
+        return html;
+    }
+
+    function getDigitValue(idPrefix) {
+        const d1 = document.getElementById(`${idPrefix}-d1`).value;
+        const d2 = document.getElementById(`${idPrefix}-d2`).value;
+        const d3 = document.getElementById(`${idPrefix}-d3`).value;
+        return parseInt(d1 + d2 + d3, 10);
+    }
+
+    window.onload = function() {
+        document.getElementById('purchase-digits').innerHTML = createDigitPickerHTML('purchase');
+        document.getElementById('discard-digits').innerHTML = createDigitPickerHTML('discard');
+    };
+
+    function showPage(pageId, btn) {
+        document.querySelectorAll('.page').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('.nav-buttons button').forEach(el => el.classList.remove('active'));
+        document.getElementById(pageId).classList.add('active');
+        btn.classList.add('active');
+        if(pageId === 'page-history') renderHistory();
+        if(pageId === 'page-inventory') renderInventory();
+    }
+
+    function toggleEquipmentList() {
+        const el = document.getElementById('equipment-list');
+        el.style.display = el.style.display === 'none' ? 'block' : 'none';
+    }
+
+    function checkSignDetail(prefix) {
+        const type = document.getElementById(`${prefix}-type`).value;
+        document.getElementById(`${prefix}-sign-detail-group`).style.display = (type === '看板') ? 'block' : 'none';
+    }
+
+    function getNowString() {
+        const now = new Date();
+        return `${now.getFullYear()}/${String(now.getMonth()+1).padStart(2,'0')}/${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+    }
+
+    function saveSiteRecord() {
+        const siteName = document.getElementById('site-name').value;
+        if (!siteName) { alert('現場名を入力してください。'); return; }
+        const action = document.querySelector('input[name="action-type"]:checked').value;
+        let items = [];
+        equipmentTypes.forEach((type, index) => {
+            const count = getDigitValue('site-eq-' + index);
+            if (count > 0) {
+                let name = type;
+                if (type === '看板') name = `看板（${document.getElementById('site-sign-detail').value || '不明'}）`;
+                items.push({ name: name, count: count, baseType: type });
+            }
+        });
+        if (items.length === 0) return;
+        dbRef.push({ id: Date.now(), dateStr: getNowString(), type: '現場', siteName: siteName, action: action, items: items });
+        alert('現場記録を保存しました！');
+    }
+
+    function saveStockAction(actionType) {
+        const prefix = actionType === '購入' ? 'purchase' : 'discard';
+        let type = document.getElementById(`${prefix}-type`).value;
+        const count = getDigitValue(prefix);
+        if (count === 0) return;
+        if (type === '看板') type = `看板（${document.getElementById(`${prefix}-sign-detail`).value || '不明'}）`;
+        
+        dbRef.push({
+            id: Date.now(),
+            dateStr: getNowString(),
+            type: actionType,
+            siteName: actionType === '購入' ? '会社（購入）' : '会社（廃棄）',
+            action: actionType,
+            items: [{ name: type, count: count, baseType: type.includes('看板') ? '看板' : type }]
+        });
+        alert(actionType + 'を記録しました！');
+    }
+
+    function deleteRecord(firebaseKey) {
+        if (confirm('削除しますか？')) database.ref('inventoryDB/' + firebaseKey).remove();
+    }
+
+    function renderHistory() {
+        const searchWord = document.getElementById('search-history').value.toLowerCase();
+        const sortedDb = [...db].sort((a, b) => b.id - a.id);
+        let html = '';
+        sortedDb.forEach(record => {
+            let itemsText = record.items.map(i => `${i.name}: ${i.count}個`).join('、');
+            if (searchWord && !record.siteName.toLowerCase().includes(searchWord) && !itemsText.toLowerCase().includes(searchWord)) return;
+            let color = '#3498db'; if (record.action === '持ち出し') color = '#e74c3c';
+            if (record.action === '購入') color = '#2ecc71'; if (record.action === '廃棄') color = '#7f8c8d'; 
+            html += `<div class="history-item" style="border-left-color: ${color}">`;
+            html += `<button class="btn-delete" onclick="deleteRecord('${record.firebaseKey}')">削除</button>`;
+            html += `<div class="history-date">${record.dateStr} 【${record.type}】</div>`;
+            html += `<div><strong>${record.siteName}</strong> (${record.action})</div>`;
+            html += `<div style="color:#555; margin-top:5px;">${itemsText}</div></div>`;
+        });
+        document.getElementById('history-display').innerHTML = html || '<p>データがありません。</p>';
+    }
+
+    function renderInventory() {
+        let totalInventory = {};
+        let siteInventory = {};
+        db.forEach(record => {
+            record.items.forEach(item => {
+                const name = item.name;
+                if (!totalInventory[name]) totalInventory[name] = 0;
+                if (record.action === '購入' || record.action === '持ち帰り') totalInventory[name] += item.count;
+                if (record.action === '持ち出し' || record.action === '廃棄') totalInventory[name] -= item.count;
+                if (record.type === '現場') {
+                    if (!siteInventory[record.siteName]) siteInventory[record.siteName] = {};
+                    if (!siteInventory[record.siteName][name]) siteInventory[record.siteName][name] = 0;
+                    if (record.action === '持ち出し') siteInventory[record.siteName][name] += item.count;
+                    if (record.action === '持ち帰り') siteInventory[record.siteName][name] -= item.count;
+                }
+            });
+        });
+        let totalHtml = '<table><tr><th>資機材名</th><th>倉庫在庫</th></tr>';
+        for (let name in totalInventory) totalHtml += `<tr><td>${name}</td><td>${totalInventory[name]} 個</td></tr>`;
+        document.getElementById('inventory-display').innerHTML = totalHtml + '</table>';
+
+        let siteHtml = '';
+        for (let site in siteInventory) {
+            let currentSiteHtml = `<h4>${site}</h4><ul>`;
+            let hasItems = false;
+            for (let name in siteInventory[site]) {
+                if (siteInventory[site][name] > 0) { currentSiteHtml += `<li>${name}: ${siteInventory[site][name]} 個</li>`; hasItems = true; }
+            }
+            if (hasItems) siteHtml += currentSiteHtml + `</ul>`;
+        }
+        document.getElementById('site-inventory-display').innerHTML = siteHtml || '<p>持ち出し中なし</p>';
+    }
+</script>
+</body>
+</html>
