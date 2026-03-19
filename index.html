@@ -145,7 +145,7 @@
             <label>担当者名</label>
             <input type="text" id="discard-staff" class="staff-input" placeholder="入力者の名前">
         </div>
-        <button class="btn btn-discard" onclick="saveStockAction('廃棄')">廃棄を記録する</button>
+        <button class="btn btn-discard" onclick="confirmDiscardRecord()">廃棄を記録する</button>
     </div>
 </div>
 
@@ -192,10 +192,8 @@
 
     // --- ナビゲーション ---
     function handleNav(pid, btn) {
-        if (pid === 'page-admin') {
-            pendingAction = () => { showPage(pid, btn); };
-            openPwModal();
-        } else { showPage(pid, btn); if(pid==='page-history') renderHistory(); }
+        if (pid === 'page-admin') { pendingAction = () => { showPage(pid, btn); }; openPwModal(); }
+        else { showPage(pid, btn); if(pid==='page-history') renderHistory(); }
     }
     function showPage(pid, btn) { document.querySelectorAll('.page').forEach(e=>e.classList.remove('active')); document.querySelectorAll('.nav-buttons button').forEach(e=>e.classList.remove('active')); document.getElementById(pid).classList.add('active'); btn.classList.add('active'); closeSiteStatus(); }
 
@@ -211,108 +209,91 @@
         renderMasterList('eq-master-list', eqTypes, eqMasterRef);
         renderMasterList('sign-master-list-display', signTypes, signMasterRef);
         renderMasterList('site-master-list-display', siteTypes, siteMasterRef);
-        document.getElementById('all-item-datalist').innerHTML = [...eqTypes.filter(t=>t!=='看板'), ...signTypes.map(t=>`看板（${t}）`)].map(t=>`<option value="${t}">`).join('');
     }
 
-    // --- 選択グリッド（現場・種類）の制御 ---
+    // --- グリッド選択制御 ---
     function renderSelectionGrids() {
-        // 現場名リスト
         const siteHtml = siteTypes.map(s => `<button class="btn-site-select" onclick="selectFromGrid('${s}', 'site-name', 'site-selection-list')">${s}</button>`).join('');
         document.getElementById('site-selection-list').innerHTML = siteHtml;
-        
         const discardSiteHtml = siteTypes.map(s => `<button class="btn-site-select" onclick="selectFromGrid('${s}', 'discard-site-name', 'discard-site-selection-list')">${s}</button>`).join('');
         document.getElementById('discard-site-selection-list').innerHTML = discardSiteHtml;
-
-        // 廃棄種類リスト
         const allItems = [...eqTypes.filter(t => t !== '看板'), ...signTypes.map(t => `看板（${t}）`)];
         const itemHtml = allItems.map(item => `<button class="btn-site-select" style="background:#f8f9fa;" onclick="selectFromGrid('${item}', 'discard-item-name', 'discard-item-grid')">${item}</button>`).join('');
         document.getElementById('discard-item-grid').innerHTML = itemHtml;
     }
+    function toggleSelectionGrid(id) { const el = document.getElementById(id); el.style.display = (el.style.display === 'none') ? 'grid' : 'none'; }
+    function selectFromGrid(value, inputId, gridId) { document.getElementById(inputId).value = value; document.getElementById(gridId).style.display = 'none'; }
 
-    function toggleSelectionGrid(id) {
-        const el = document.getElementById(id);
-        el.style.display = (el.style.display === 'none') ? 'grid' : 'none';
+    // --- 保存共通ロジック ---
+    function executeSaveRecord() {
+        if(!currentPendingRecord) return;
+        const { name, staff, act, items } = currentPendingRecord;
+        if(act !== '購入' && !siteTypes.includes(name)) siteMasterRef.push(name);
+        dbRef.push({ id:Date.now(), dateStr:getNow(), type: (act==='購入'||act==='廃棄')?act:'現場', siteName:name, action:act, items:items, staff:staff });
+        closeConfirmModal(); alert('保存しました'); resetForms();
     }
 
-    function selectFromGrid(value, inputId, gridId) {
-        document.getElementById(inputId).value = value;
-        document.getElementById(gridId).style.display = 'none';
-    }
-
-    // --- 現場入力・資機材リスト関連 ---
-    function renderSiteInputList() {
-        let h='';
-        eqTypes.filter(t=>t!=='看板').forEach((t, i) => {
-            h+=`<div class="form-group"><label>${t}</label><div id="site-eq-val-${i}" class="number-input-box" onclick="openNumModal('site-eq-val-${i}', '${t}')">0</div></div>`;
-        });
-        h+=`<hr style="margin: 20px 0; border: 0; border-top: 1px solid #ddd;"><div class="form-group"><label>看板</label><button class="btn btn-primary" style="background-color:#95a5a6; margin-top:5px;" onclick="toggleSignList()">看板を選択する ▼</button><div id="sign-list" style="display: none; margin-top: 10px; padding:10px; background:#f9f9f9; border-radius:5px;"></div></div>`;
-        document.getElementById('equipment-list').innerHTML=h;
-        renderSiteSignList();
-    }
-    function renderSiteSignList() {
-        const area = document.getElementById('sign-list'); if (!area) return;
-        let sh = ''; signTypes.forEach((st, si) => {
-            sh += `<div class="form-group" style="margin-bottom:10px;"><label style="font-size:14px; font-weight:normal;">${st}</label><div id="site-sign-val-${si}" class="number-input-box" style="padding:8px; font-size:16px;" onclick="openNumModal('site-sign-val-${si}', '看板（${st}）の数量')">0</div></div>`;
-        });
-        area.innerHTML = sh || '<p style="font-size:12px; color:#666;">看板マスター未登録</p>';
-    }
-    function toggleSignList() { const e = document.getElementById('sign-list'); e.style.display = e.style.display === 'none' ? 'block' : 'none'; }
-    function toggleEquipmentList() { const e=document.getElementById('equipment-list'); e.style.display=e.style.display==='none'?'block':'none'; }
-
-    // --- 保存処理 ---
+    // --- 現場入力 確認 ---
     function confirmSiteRecord() {
         const name=document.getElementById('site-name').value.trim(), staff=document.getElementById('site-staff').value;
         if(!name || !staff) return alert('現場名と担当者を入力してください');
         const act=document.querySelector('input[name="action-type"]:checked').value;
         let items=[];
-        eqTypes.filter(t=>t!=='看板').forEach((t, i) => {
-            const count=parseInt(document.getElementById(`site-eq-val-${i}`).innerText, 10);
-            if(count>0) items.push({ name:t, count:count });
-        });
-        signTypes.forEach((st, si) => {
-            const count=parseInt(document.getElementById(`site-sign-val-${si}`).innerText, 10);
-            if(count>0) items.push({ name:`看板（${st}）`, count:count });
-        });
+        eqTypes.filter(t=>t!=='看板').forEach((t, i) => { const count=parseInt(document.getElementById(`site-eq-val-${i}`).innerText, 10); if(count>0) items.push({ name:t, count:count }); });
+        signTypes.forEach((st, si) => { const count=parseInt(document.getElementById(`site-sign-val-${si}`).innerText, 10); if(count>0) items.push({ name:`看板（${st}）`, count:count }); });
         if(items.length===0) return alert('資機材が選択されていません');
+        showConfirmModal(name, staff, act, items);
+    }
+
+    // --- 廃棄入力 確認 ---
+    function confirmDiscardRecord() {
+        const name=document.getElementById('discard-site-name').value.trim(), staff=document.getElementById('discard-staff').value;
+        const itemName=document.getElementById('discard-item-name').value, count=parseInt(document.getElementById('discard-val').innerText, 10);
+        if(!name || !staff || !itemName || count===0) return alert('現場名・種類・数量・担当者を全て入力してください');
+        showConfirmModal(name, staff, '廃棄', [{name:itemName, count:count}]);
+    }
+
+    function showConfirmModal(name, staff, act, items) {
         let html = `<div><strong>現場:</strong> ${name}</div><div><strong>区分:</strong> ${act}</div><div><strong>担当:</strong> ${staff}</div><div style="margin-top:10px; border-top:1px solid #ccc; padding-top:5px;">【内訳】</div>`;
         items.forEach(it => { html += `<div class="confirm-item"><span>${it.name}</span><span>${it.count} 個</span></div>`; });
         currentPendingRecord = { name, staff, act, items };
         openConfirmModal(html);
     }
-    function executeSaveRecord() {
-        if(!currentPendingRecord) return;
-        const { name, staff, act, items } = currentPendingRecord;
-        if(!siteTypes.includes(name)) siteMasterRef.push(name);
-        dbRef.push({ id:Date.now(), dateStr:getNow(), type:'現場', siteName:name, action:act, items:items, staff:staff });
-        closeConfirmModal(); alert('保存しました'); resetSite();
-    }
 
+    // 管理者の購入は即時保存（既存仕様維持）
     function saveStockAction(actType) {
-        const pre = actType==='購入'?'purchase':'discard';
-        let siteName = '会社';
-        if(actType === '廃棄') siteName = document.getElementById('discard-site-name').value.trim();
-        const name=document.getElementById(pre+'-item-name').value, staff=document.getElementById(pre+'-staff').value;
-        const count=parseInt(document.getElementById(pre+'-val').innerText, 10);
-        if(!name || !staff || count===0 || (actType==='廃棄' && !siteName)) return alert('全ての項目を正しく入力してください');
-        if(actType === '廃棄' && !siteTypes.includes(siteName)) siteMasterRef.push(siteName);
-        dbRef.push({ id:Date.now(), dateStr:getNow(), type:actType, siteName:siteName, action:actType, items:[{name:name, count:count}], staff:staff });
-        alert(actType+'を記録しました');
-        document.getElementById(pre+'-val').innerText="0"; 
-        document.getElementById(pre+'-item-name').value="";
-        if(actType === '廃棄') {
-            document.getElementById('discard-site-name').value="";
-            document.getElementById('discard-item-grid').style.display='none';
-            document.getElementById('discard-site-selection-list').style.display='none';
-        }
+        if(actType==='廃棄') return confirmDiscardRecord();
+        const pre = 'purchase';
+        const name=document.getElementById(pre+'-item-name').value, staff=document.getElementById(pre+'-staff').value, count=parseInt(document.getElementById(pre+'-val').innerText, 10);
+        if(!name || !staff || count===0) return alert('内容を確認してください');
+        dbRef.push({ id:Date.now(), dateStr:getNow(), type:'購入', siteName:'会社', action:'購入', items:[{name:name, count:count}], staff:staff });
+        alert('購入を記録しました'); document.getElementById(pre+'-val').innerText="0"; document.getElementById(pre+'-item-name').value="";
     }
 
-    // --- 履歴表示（現場ごと） ---
+    // --- 各種リセット・履歴・状況管理 ---
+    function resetForms() {
+        document.getElementById('site-name').value=''; document.getElementById('site-staff').value=''; 
+        document.querySelectorAll('[id^="site-eq-val-"]').forEach(el=>el.innerText="0");
+        document.getElementById('discard-site-name').value=''; document.getElementById('discard-item-name').value=''; 
+        document.getElementById('discard-val').innerText="0"; document.getElementById('discard-staff').value='';
+        document.getElementById('equipment-list').style.display='none';
+        document.querySelectorAll('.site-grid').forEach(g => g.style.display='none');
+    }
+
+    function renderSiteInputList() {
+        let h=''; eqTypes.filter(t=>t!=='看板').forEach((t, i) => { h+=`<div class="form-group"><label>${t}</label><div id="site-eq-val-${i}" class="number-input-box" onclick="openNumModal('site-eq-val-${i}', '${t}')">0</div></div>`; });
+        h+=`<hr style="margin: 20px 0; border: 0; border-top: 1px solid #ddd;"><div class="form-group"><label>看板</label><button class="btn btn-primary" style="background-color:#95a5a6; margin-top:5px;" onclick="toggleSignList()">看板を選択する ▼</button><div id="sign-list" style="display: none; margin-top: 10px; padding:10px; background:#f9f9f9; border-radius:5px;"></div></div>`;
+        document.getElementById('equipment-list').innerHTML=h;
+        const area = document.getElementById('sign-list'); let sh = ''; signTypes.forEach((st, si) => { sh += `<div class="form-group"><label style="font-size:14px; font-weight:normal;">${st}</label><div id="site-sign-val-${si}" class="number-input-box" style="padding:8px; font-size:16px;" onclick="openNumModal('site-sign-val-${si}', '看板（${st}）')">0</div></div>`; });
+        area.innerHTML = sh || '<p style="font-size:12px;">未登録</p>';
+    }
+    function toggleSignList() { const e = document.getElementById('sign-list'); e.style.display = e.style.display === 'none' ? 'block' : 'none'; }
+    function toggleEquipmentList() { const e=document.getElementById('equipment-list'); e.style.display=e.style.display==='none'?'block':'none'; }
+
     function renderHistory() {
-        const sw = document.getElementById('search-history').value.toLowerCase();
-        const grouped = {};
+        const sw = document.getElementById('search-history').value.toLowerCase(); const grouped = {};
         db.forEach(r => { const site = r.siteName || 'その他'; if(!grouped[site]) grouped[site] = []; grouped[site].push(r); });
-        let h = '';
-        const sortedSites = Object.keys(grouped).sort((a,b) => Math.max(...grouped[b].map(x=>x.id)) - Math.max(...grouped[a].map(x=>x.id)));
+        let h = ''; const sortedSites = Object.keys(grouped).sort((a,b) => Math.max(...grouped[b].map(x=>x.id)) - Math.max(...grouped[a].map(x=>x.id)));
         sortedSites.forEach(siteName => {
             const filtered = grouped[siteName].filter(r => (siteName + r.items.map(i=>i.name).join('') + r.staff).toLowerCase().includes(sw));
             if(sw && filtered.length === 0) return;
@@ -325,28 +306,14 @@
         });
         document.getElementById('history-display').innerHTML = h || '<p style="text-align:center; color:#999;">履歴がありません</p>';
     }
-
-    function toggleHistoryGroup(el) {
-        const content = el.nextElementSibling;
-        const isVisible = content.style.display === 'block';
-        content.style.display = isVisible ? 'none' : 'block';
-        el.querySelector('.history-toggle-label').innerText = isVisible ? content.children.length + '件 ▼' : '▲ 閉じる';
-    }
-    function toggleAllHistory(isOpen) {
-        document.querySelectorAll('.history-site-content').forEach((c, i) => {
-            c.style.display = isOpen ? 'block' : 'none';
-            document.querySelectorAll('.history-toggle-label')[i].innerText = isOpen ? '▲ 閉じる' : c.children.length + '件 ▼';
-        });
-    }
-
-    // --- その他マスター・状況管理 ---
+    function toggleHistoryGroup(el) { const content = el.nextElementSibling; const isVisible = content.style.display === 'block'; content.style.display = isVisible ? 'none' : 'block'; el.querySelector('.history-toggle-label').innerText = isVisible ? content.children.length + '件 ▼' : '▲ 閉じる'; }
+    function toggleAllHistory(isOpen) { document.querySelectorAll('.history-site-content').forEach((c, i) => { c.style.display = isOpen ? 'block' : 'none'; document.querySelectorAll('.history-toggle-label')[i].innerText = isOpen ? '▲ 閉じる' : c.children.length + '件 ▼'; }); }
     function renderMasterList(id, list, ref) { document.getElementById(id).innerHTML = list.map(t => `<div class="master-item"><span>${t}</span><button class="btn-danger" style="width:60px;" onclick="deleteMaster('${t}', '${ref.key}')">削除</button></div>`).join(''); }
     function addSiteMaster() { const n=document.getElementById('new-site-master-name').value.trim(); if(n&&!siteTypes.includes(n)){siteMasterRef.push(n); document.getElementById('new-site-master-name').value='';} }
     function addEqMaster() { const n=document.getElementById('new-eq-name').value.trim(); if(n&&!eqTypes.includes(n)){eqMasterRef.push(n); document.getElementById('new-eq-name').value='';} }
     function addSignMaster() { const n=document.getElementById('new-sign-name').value.trim(); if(n&&!signTypes.includes(n)){signMasterRef.push(n); document.getElementById('new-sign-name').value='';} }
     function deleteMaster(n, rKey) { if(n==='看板') return; if(confirm(n+' を削除しますか？')) database.ref(rKey).once('value', s=>s.forEach(c=>{if(c.val()===n)c.ref.remove();})); }
     function getNow() { const n=new Date(); return `${n.getFullYear()}/${n.getMonth()+1}/${n.getDate()} ${n.getHours()}:${String(n.getMinutes()).padStart(2,'0')}`; }
-    function resetSite() { document.getElementById('site-name').value=''; document.getElementById('site-staff').value=''; document.querySelectorAll('[id^="site-eq-val-"]').forEach(el=>el.innerText="0"); document.getElementById('equipment-list').style.display='none'; }
     function updateSiteStatusList() { document.getElementById('site-buttons-list').innerHTML = siteTypes.map(s => `<button class="btn-site-select" onclick="showSiteStatus('${s}')">${s}</button>`).join(''); }
     function showSiteStatus(siteName) {
         const display = document.getElementById('site-status-detail'); let status = {};
@@ -362,12 +329,7 @@
         let th = '<table><tr><th>資機材</th><th>倉庫在庫</th></tr>'; for(let k in total) th += `<tr><td>${k}</td><td>${total[k]} 個</td></tr>`;
         document.getElementById('inventory-display').innerHTML = th + '</table>';
     }
-    function toggleAdminContent(id, titleEl) {
-        const content = document.getElementById(id);
-        const arrow = titleEl.querySelector('.arrow');
-        if (content.style.display === 'block') { content.style.display = 'none'; arrow.innerText = '▼ タップで開く'; }
-        else { content.style.display = 'block'; arrow.innerText = '▲ 閉じる'; }
-    }
+    function toggleAdminContent(id, titleEl) { const content = document.getElementById(id); const arrow = titleEl.querySelector('.arrow'); if (content.style.display === 'block') { content.style.display = 'none'; arrow.innerText = '▼ タップで開く'; } else { content.style.display = 'block'; arrow.innerText = '▲ 閉じる'; } }
 </script>
 </body>
 </html>
